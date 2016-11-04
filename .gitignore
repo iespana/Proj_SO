@@ -1,0 +1,205 @@
+#Creacion de Dockerfile con imagen ubuntu
+iespana@ivoespGT:~$ mkdir
+iespana@ivoespGT:~$ cd ubuntu
+iespana@ivoespGT:~/ubuntu$ nano Dockerfile
+
+#Dentro de Dockerfile
+FROM ubuntu:16.04
+MAINTAINER "iespana <ivonne.bersiano@gmail.com>"
+RUN apt-get -qq update
+#RUN dpkg-reconfigure -au
+RUN apt-get update
+RUN apt-get install -y net-tools
+
+#Crear una imagen a partir del Dockerfile
+iespana@ivoespGT:~/ubuntu$ docker build -t proj01 .
+docker images
+REPOSITORY            TAG                 IMAGE ID            CREATED             SIZE
+proj01                latest              b566bfb9685a        12 minutes ago      170.6 MB
+
+#corremos la imagen
+docker run -it proj01
+root@9446cacc8f74:/# ifconfig
+eth0      Link encap:Ethernet  HWaddr 02:42:ac:11:00:02  
+          inet addr:172.17.0.2  Bcast:0.0.0.0  Mask:255.255.0.0
+          inet6 addr: fe80::42:acff:fe11:2/64 Scope:Link
+          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+          RX packets:15 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:6 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0 
+          RX bytes:2160 (2.1 KB)  TX bytes:508 (508.0 B)
+
+lo        Link encap:Local Loopback  
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          inet6 addr: ::1/128 Scope:Host
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1 
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+          
+#Creamos segmento de red
+docker network create --driver=bridge --subnet=192.168.0.0/16 beta01
+docker network ls
+NETWORK ID          NAME                DRIVER              SCOPE
+4e62d36893c9        beta01              bridge              local  
+
+#Inspeccionar la red
+docker network inspect beta01
+[
+    {
+        "Name": "beta01",
+        "Id": "4e62d36893c9b2e39001ae7cadc065062106047a55fcec3797588a0e7e68c564",
+        "Scope": "local",
+        "Driver": "bridge",
+        "EnableIPv6": false,
+        "IPAM": {
+            "Driver": "default",
+            "Options": {},
+            "Config": [
+                {
+                    "Subnet": "192.168.0.0/16"
+                }
+            ]
+        },
+        "Internal": false,
+        "Containers": {},
+        "Options": {},
+        "Labels": {}
+    }
+]
+
+#Cambiamos la ip de nuestro segmento de red
+docker run --network=beta01 --ip=192.168.1.2 -it proj01
+root@034ff0ea6f42:/# ifconfig
+eth0      Link encap:Ethernet  HWaddr 02:42:c0:a8:01:02  
+          inet addr:192.168.1.2  Bcast:0.0.0.0  Mask:255.255.0.0
+          inet6 addr: fe80::42:c0ff:fea8:102/64 Scope:Link
+          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+          RX packets:18 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:7 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0 
+          RX bytes:2635 (2.6 KB)  TX bytes:578 (578.0 B)
+
+lo        Link encap:Local Loopback  
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          inet6 addr: ::1/128 Scope:Host
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1 
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+          
+#Creamos una ip estatica en un servidor (tomcat)           
+docker run -it -p 8081:8080 --network=beta01 --ip=192.168.1.3 tomcat:8.5.4-jre8
+
+#Verificamos en un navegador la ip en el puerto 8080
+http://192.168.1.3:8080/
+
+**Docker Swarm**
+#Creando un Swarm
+(Buscamos la IP de nuestro segmento de red)
+:~$ ifconfig
+br-4e62d36893c9 Link encap:Ethernet  HWaddr 02:42:e4:c4:9b:59  
+          inet addr:192.168.0.1  Bcast:0.0.0.0  Mask:255.255.0.0
+          UP BROADCAST MULTICAST  MTU:1500  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0 
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+:~$ docker swarm init --advertise-addr 192.168.0.1
+Swarm initialized: current node (6pj59kv5ki0485csk3h3p4dr3) is now a manager.
+
+To add a worker to this swarm, run the following command:
+
+    docker swarm join \
+    --token SWMTKN-1-3ac724fxoymx0hrg5vontz0gz4z1dhp60t0rfec7u4qedp59vt-3k6gaciunq7ycpvm7uguhar0a \
+    192.168.0.1:2377
+
+To add a manager to this swarm, run 'docker swarm join-token manager' and follow the instructions.
+
+#utilizar --advertise-addr nos permite configurar el nodo principal (manager) a publicar la direccion 192.168.0.1
+Los nodos en el swarm deben ser capaces de accesar al la IP del manager. Verificaremos nuestro swarm con docker info
+
+~$ docker info
+Swarm: active
+ NodeID: 6pj59kv5ki0485csk3h3p4dr3
+ Is Manager: true
+ ClusterID: 539e0pcxbds92pn4s09brzy7s
+ Managers: 1
+ Nodes: 1
+
+#Corremos el comando node ls para ver la informacion de nuestros nodos:
+~$ docker node ls
+ID                           HOSTNAME  STATUS  AVAILABILITY  MANAGER STATUS
+6pj59kv5ki0485csk3h3p4dr3 *  ivoespGT  Ready   Active        Leader
+
+~$ docker run --rm swarm create
+594255f5c2d62e9b7f9eb15466fcd0c1
+
+#deploy testrest file en web server tomcat 
+~$ cd ubuntu
+iespana@ivoespGT:~/ubuntu$ mkdir tomcat
+iespana@ivoespGT:~/ubuntu$ chmod 775 -R tomcat
+iespana@ivoespGT:~/ubuntu$ exit
+exit
+
+#Dockerfile con imagen tomcat dentro de una carpeta llamada tomcat
+iespana@ivoespGT:~$ cd tomcat
+iespana@ivoespGT:~/tomcat$ ls
+Dockerfile
+iespana@ivoespGT:~/tomcat$ docker build -t tom_test01 .
+Sending build context to Docker daemon 2.048 kB
+Step 1 : FROM tomcat:8.5.4-jre8
+ ---> 98cc750770ba
+Step 2 : MAINTAINER "iespana <iespna.bersiano@gmail.com>"
+ ---> Running in 3e5a0e83b35a
+ ---> c91507d9cf76
+Removing intermediate container 3e5a0e83b35a
+Successfully built c91507d9cf76
+iespana@ivoespGT:~/tomcat$ exit
+exit
+iespana@ivoespGT:~$ docker run -it -v /home/iespana/ubuntu/tomcat:/usr/local/tomcat/webapps tom_test01
+Using CATALINA_BASE:   /usr/local/tomcat
+Using CATALINA_HOME:   /usr/local/tomcat
+Using CATALINA_TMPDIR: /usr/local/tomcat/temp
+Using JRE_HOME:        /usr/lib/jvm/java-8-openjdk-amd64/jre
+Using CLASSPATH:       /usr/local/tomcat/bin/bootstrap.jar:/usr/local/tomcat/bin/tomcat-juli.jar
+04-Nov-2016 04:33:16.355 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log Server version:        Apache Tomcat/8.5.4
+04-Nov-2016 04:33:16.371 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log Server built:          Jul 6 2016 08:43:30 UTC
+04-Nov-2016 04:33:16.371 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log Server number:         8.5.4.0
+04-Nov-2016 04:33:16.371 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log OS Name:               Linux
+04-Nov-2016 04:33:16.371 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log OS Version:            4.4.0-45-generic
+04-Nov-2016 04:33:16.371 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log Architecture:          amd64
+04-Nov-2016 04:33:16.372 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log Java Home:             /usr/lib/jvm/java-8-openjdk-amd64/jre
+04-Nov-2016 04:33:16.372 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log JVM Version:           1.8.0_102-8u102-b14.1-1~bpo8+1-b14
+04-Nov-2016 04:33:16.372 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log JVM Vendor:            Oracle Corporation
+04-Nov-2016 04:33:16.372 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log CATALINA_BASE:         /usr/local/tomcat
+04-Nov-2016 04:33:16.373 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log CATALINA_HOME:         /usr/local/tomcat
+04-Nov-2016 04:33:16.373 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log Command line argument: -Djava.util.logging.config.file=/usr/local/tomcat/conf/logging.properties
+04-Nov-2016 04:33:16.373 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log Command line argument: -Djava.util.logging.manager=org.apache.juli.ClassLoaderLogManager
+04-Nov-2016 04:33:16.373 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log Command line argument: -Djdk.tls.ephemeralDHKeySize=2048
+04-Nov-2016 04:33:16.374 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log Command line argument: -Dcatalina.base=/usr/local/tomcat
+04-Nov-2016 04:33:16.374 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log Command line argument: -Dcatalina.home=/usr/local/tomcat
+04-Nov-2016 04:33:16.374 INFO [main] org.apache.catalina.startup.VersionLoggerListener.log Command line argument: -Djava.io.tmpdir=/usr/local/tomcat/temp
+04-Nov-2016 04:33:16.374 INFO [main] org.apache.catalina.core.AprLifecycleListener.lifecycleEvent Loaded APR based Apache Tomcat Native library 1.2.8 using APR version 1.5.1.
+04-Nov-2016 04:33:16.374 INFO [main] org.apache.catalina.core.AprLifecycleListener.lifecycleEvent APR capabilities: IPv6 [true], sendfile [true], accept filters [false], random [true].
+04-Nov-2016 04:33:16.374 INFO [main] org.apache.catalina.core.AprLifecycleListener.lifecycleEvent APR/OpenSSL configuration: useAprConnector [false], useOpenSSL [true]
+04-Nov-2016 04:33:16.434 INFO [main] org.apache.catalina.core.AprLifecycleListener.initializeSSL OpenSSL successfully initialized (OpenSSL 1.0.2h  3 May 2016)
+04-Nov-2016 04:33:17.033 INFO [main] org.apache.coyote.AbstractProtocol.init Initializing ProtocolHandler ["http-nio-8080"]
+04-Nov-2016 04:33:17.143 INFO [main] org.apache.tomcat.util.net.NioSelectorPool.getSharedSelector Using a shared selector for servlet write/read
+04-Nov-2016 04:33:17.147 INFO [main] org.apache.coyote.AbstractProtocol.init Initializing ProtocolHandler ["ajp-nio-8009"]
+04-Nov-2016 04:33:17.150 INFO [main] org.apache.tomcat.util.net.NioSelectorPool.getSharedSelector Using a shared selector for servlet write/read
+04-Nov-2016 04:33:17.150 INFO [main] org.apache.catalina.startup.Catalina.load Initialization processed in 2977 ms
+04-Nov-2016 04:33:17.261 INFO [main] org.apache.catalina.core.StandardService.startInternal Starting service Catalina
+04-Nov-2016 04:33:17.262 INFO [main] org.apache.catalina.core.StandardEngine.startInternal Starting Servlet Engine: Apache Tomcat/8.5.4
+04-Nov-2016 04:33:17.394 INFO [localhost-startStop-1] org.apache.catalina.startup.HostConfig.deployWAR Deploying web application archive /usr/local/tomcat/webapps/TestRest02.war
+04-Nov-2016 04:33:23.116 INFO [localhost-startStop-1] org.apache.jasper.servlet.TldScanner.scanJars At least one JAR was scanned for TLDs yet contained no TLDs. Enable debug logging for this logger for a complete list of JARs that were scanned but no TLDs were found in them. Skipping unneeded JARs during scanning can improve startup time and JSP compilation time.
+04-Nov-2016 04:33:23.217 INFO [localhost-startStop-1] com.sun.jersey.api.core.servlet.WebAppResourceConfig.init Scanning for root resource and provider classes in the Web app resource paths:
+  /WEB-INF/lib
+  /WEB-INF/classes
+04-Nov-2016 04:33:24.432 INFO [localhost-startStop-1] org.apache.catalina.startup.HostConfig.deployWAR Deployment of web application archive /usr/local/tomcat/webapps/TestRest02.war has finished in 7,026 ms
+04-Nov-2016 04:33:24.441 INFO [main] org.apache.coyote.AbstractProtocol.start Starting ProtocolHandler [http-nio-8080]
+04-Nov-2016 04:33:24.448 INFO [main] org.apache.coyote.AbstractProtocol.start Starting ProtocolHandler [ajp-nio-8009]
+04-Nov-2016 04:33:24.449 INFO [main] org.apache.catalina.startup.Catalina.start Server startup in 7298 ms
